@@ -18,6 +18,8 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include "dma.h"
+#include "usart.h"
 #include "gpio.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -43,7 +45,10 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+// 提供一个具体的数组
+uint8_t rc_data[18];
+// 创造一个遥控器对象
+SerialPort remote_port(&huart3, rc_data, 18);
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -86,8 +91,10 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_DMA_Init();
+  MX_USART3_UART_Init();
   /* USER CODE BEGIN 2 */
-
+  remote_port.start();
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -97,6 +104,18 @@ int main(void)
     LED_BLUE();
     LED_RED();
     LED_GREEN();
+    //一旦超过50ms没收到数据，is_online 就会变成 false
+      remote_port.check_status();
+
+      // 根据是否在线，决定机器人的动作
+      if (remote_port.get_is_online() == true) {
+          // 正常在线状态：指示灯亮绿灯，可以驱动电机
+          LED_GREEN();
+      } else {
+          // 假设危险离线状态：指示灯亮红灯
+          LED_RED();
+          // Motor_Stop(); 
+      }
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -150,7 +169,24 @@ void SystemClock_Config(void)
 }
 
 /* USER CODE BEGIN 4 */
-
+void HAL_UARTEx_RxEventCallback(UART_HandleTypeDef *huart, uint16_t Size) 
+{ 
+    if(huart->Instance == USART3) // 判断是不是遥控器那个口（USART3）
+    { 
+        if(Size == 18) // 大疆遥控器一帧必须是18字节，防止乱码
+        { 
+            // 核心动作 1：告诉遥控器对象，你收到心跳了！
+            remote_port.update_tick(); 
+            
+            // 核心动作 2：把数据交给你的解析函数
+            // 这里的 rc_data 就是我们在 PV 区定义的那个数组
+            RemoteDataProcess(rc_data); 
+        } 
+        
+        // 核心动作 3：重要！按一下启动按钮，准备接收下一帧
+        remote_port.start();
+    } 
+}
 /* USER CODE END 4 */
 
 /**
